@@ -9,7 +9,7 @@
 </head>
 <body>
 
-  <!-- HEADER avec images défilantes -->
+  <!-- en-tête avec images défilantes -->
   <header class="header" aria-label="En-tête">
     <div class="header-bg" aria-hidden="true">
       <div class="header-bg-slide active" style="background-image:url('images/image1.avif');"></div>
@@ -31,16 +31,17 @@
       </div>
 
       <nav class="nav" aria-label="Navigation principale">
-        <a href="#sections">Accueil</a>
-        <a href="#chat">Informations</a>
-        <a href="#footer">Contact</a>
+         <a href="#sections">Informations</a>
+         <a href="#chat">Chatbot</a>
+         <a href="#footer">Contact</a>
       </nav>
+
     </div>
   </header>
 
   <main>
 
-    <!-- HERO avec images défilantes -->
+    <!-- Haut du site avec images défilantes -->
     <section class="hero" aria-label="Bannière principale">
       <div class="hero-bg" aria-hidden="true">
         <div class="hero-bg-slide active" style="background-image:url('images/image4.jpg');"></div>
@@ -53,11 +54,12 @@
         <div class="hero-content">
           <h1>Bienvenue chez EPITECH Infos</h1>
           <p class="hero-text">
-            Découvrez l’essentiel sur EPITECH et utilisez l’espace chatbot pour poser vos questions.
+            Découvrez l’essentiel sur EPITECH. Pour discuter avec l’assistant, utilisez le bouton en bas à droite.
           </p>
 
           <div class="hero-actions">
-            <a class="btn btn-primary" href="#chat">Formations</a>
+            <!-- boutons de navigation -->
+            <a class="btn btn-primary" href="#sections">Formations</a>
             <a class="btn btn-ghost" href="#sections">Admissions</a>
           </div>
         </div>
@@ -97,8 +99,8 @@
       </div>
     </section>
 
-    <!-- SECTIONS programmes-->
-    <section id="sections" class="container" aria-label="Accueil — sections vitrine">
+    <!-- blocs de segmentation -->
+    <section id="sections" class="container" aria-label="Informations — sections vitrine">
       <header class="section-head">
         <h2>La vie à EPITECH</h2>
         <p class="muted">Découvrez les aspects essentiels de la vie étudiante à EPITECH.</p>
@@ -140,43 +142,6 @@
       </div>
     </section>
 
-    <!-- CHATBOT -->
-    <section id="chat" class="container" aria-label="Informations — chatbot">
-      <header class="section-head">
-        <h2>POSEZ VOS QUESTIONS</h2>
-        <p class="muted">Échangeons ensemble.</p>
-      </header>
-
-      <div class="chat-shell card">
-        <div class="chat-header">
-          <div class="chat-title">
-            <img src="images/logo-AE.png" alt="AE" class="chat-logo" />
-            Assistant EPITECH
-          </div>
-          <div class="chat-meta">
-            <span class="chat-dot offline" aria-hidden="true"></span>
-            <span class="chat-status" id="chat-status">Hors ligne</span>
-          </div>
-        </div>
-
-        <div class="chat-window" aria-label="Conversation" aria-live="polite">
-          <div class="msg msg-bot">
-            <div class="avatar">
-              <img src="images/logo-AE.png" alt="Assistant EPITECH" />
-            </div>
-            <div class="bubble">
-              Bonjour. Je suis l’assistant EPITECH. Posez-moi une question sur les programmes, les campus ou la vie étudiante.
-            </div>
-          </div>
-        </div>
-
-        <form class="chat-form" aria-label="Saisie">
-          <input id="chat-input" type="text" placeholder="Posez votre question…" autocomplete="off" required />
-          <button id="chat-submit" class="btn btn-primary" type="submit" disabled>Envoyer</button>
-        </form>
-      </div>
-    </section>
-
   </main>
 
   <!-- pieds de page -->
@@ -185,14 +150,46 @@
       <div>
         <div class="footer-title">EPITECH Infos</div>
         <div class="muted">Groupe 11 — MSc</div>
+        <div class="muted" style="margin-top:6px;">© 2026 — Projet pédagogique</div>
       </div>
+
       <div class="footer-links">
-        <a href="#sections">Accueil</a>
-        <a href="#chat">Informations</a>
-        <a href="#footer">Contact</a>
+        <a href="javascript:void(0)" target="_blank" rel="noopener noreferrer">Instagram</a>
+        <a href="javascript:void(0)" target="_blank" rel="noopener noreferrer">Twitter</a>
+        <a href="javascript:void(0)" target="_blank" rel="noopener noreferrer">LinkedIn</a>
       </div>
     </div>
   </footer>
+
+  <!-- ===== Bouton flottant Chatbot + popup chatbot ===== -->
+  <button class="chat-fab" id="open-chat" type="button" aria-haspopup="dialog" aria-controls="chat-widget">
+    <span class="chat-fab-icon" aria-hidden="true">💬</span>
+    <span class="chat-fab-text">Discuter</span>
+  </button>
+
+  <div class="chat-widget" id="chat-widget" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Assistant EPITECH">
+    <div class="chat-widget-head">
+      <div class="chat-widget-title">
+        <img src="images/logo-AE.png" alt="AE" class="chat-logo" />
+        Assistant EPITECH
+      </div>
+      <button class="chat-widget-close" id="close-chat" type="button" aria-label="Fermer">✕</button>
+    </div>
+
+    <div class="chat-widget-body" id="chat-widget-body" aria-label="Conversation">
+      <div class="msg msg-bot">
+        <div class="avatar">
+          <img src="images/logo-AE.png" alt="Assistant EPITECH" />
+        </div>
+        <div class="bubble">Bonjour. Je suis l’assistant EPITECH. Posez-moi une question.</div>
+      </div>
+    </div>
+
+    <form class="chat-widget-form" id="chat-widget-form">
+      <input id="chat-input" type="text" placeholder="Écrivez votre question..." autocomplete="off" />
+      <button class="btn btn-primary" type="submit">Envoyer</button>
+    </form>
+  </div>
 
   <script src="app.js"></script>
 </body>

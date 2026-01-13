@@ -1,6 +1,9 @@
+// =========================
+// Slider (Header + Hero)
+// =========================
 function makeSlider(selector, intervalMs) {
   const slides = Array.from(document.querySelectorAll(selector));
-  if (slides.length === 0) return;
+  if (!slides.length) return;
 
   let i = 0;
   slides.forEach((s, idx) => s.classList.toggle("active", idx === 0));
@@ -15,107 +18,107 @@ function makeSlider(selector, intervalMs) {
 makeSlider(".header-bg-slide", 3200);
 makeSlider(".hero-bg-slide", 4500);
 
-const BACKEND_PORT = 8000;
-const API_PROTOCOL = window.location.protocol === "https:" ? "https" : "http";
-const API_HOST = window.location.hostname || "127.0.0.1";
-const API_BASE_URL = `${API_PROTOCOL}://${API_HOST}:${BACKEND_PORT}`;
+// =========================
+// Chatbot Widget (popup bas à droite)
+// =========================
+(function () {
+  const openBtn = document.getElementById("open-chat");
+  const closeBtn = document.getElementById("close-chat");
+  const widget = document.getElementById("chat-widget");
 
-const chatWindow = document.querySelector(".chat-window");
-const chatForm = document.querySelector(".chat-form");
-const chatInput = document.querySelector("#chat-input");
-const chatButton = document.querySelector("#chat-submit");
-const chatStatus = document.querySelector("#chat-status");
-const chatDot = document.querySelector(".chat-dot");
-const assistantAvatarSrc = "images/logo-AE.png";
-const SESSION_STORAGE_KEY = "epitech-chat-session-id";
+  const form = document.getElementById("chat-widget-form");
+  const input = document.getElementById("chat-input");
+  const body = document.getElementById("chat-widget-body");
+  const BACKEND_PORT = 8000;
+  const API_PROTOCOL = window.location.protocol === "https:" ? "https" : "http";
+  const API_HOST = window.location.hostname || "127.0.0.1";
+  const API_BASE_URL = `${API_PROTOCOL}://${API_HOST}:${BACKEND_PORT}`;
+  const SESSION_STORAGE_KEY = "epitech-chat-session-id";
 
-function getSessionId() {
-  const existing = localStorage.getItem(SESSION_STORAGE_KEY);
-  if (existing) return existing;
-  const generated = typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  localStorage.setItem(SESSION_STORAGE_KEY, generated);
-  return generated;
-}
+  // Si tu n'as pas encore ajouté le HTML du widget, on évite les erreurs
+  if (!openBtn || !closeBtn || !widget || !form || !input || !body) return;
 
-function setStatus(online, text) {
-  if (chatStatus) {
-    chatStatus.textContent = text;
-  }
-  if (chatDot) {
-    chatDot.classList.toggle("offline", !online);
-  }
-}
-
-async function checkHealth() {
-  if (!chatStatus) return;
-  try {
-    const resp = await fetch(`${API_BASE_URL}/health`);
-    if (!resp.ok) throw new Error("health check failed");
-    setStatus(true, "Connecte");
-  } catch (error) {
-    setStatus(false, "Backend indisponible");
-  }
-}
-
-function appendMessage(role, text) {
-  if (!chatWindow) return null;
-
-  const msg = document.createElement("div");
-  msg.className = `msg ${role === "user" ? "msg-user" : "msg-bot"}`;
-
-  const bubble = document.createElement("div");
-  bubble.className = "bubble";
-  bubble.textContent = text;
-
-  if (role === "user") {
-    msg.appendChild(bubble);
-    const avatar = document.createElement("div");
-    avatar.className = "avatar user";
-    avatar.setAttribute("aria-hidden", "true");
-    avatar.textContent = "Vous";
-    msg.appendChild(avatar);
-  } else {
-    const avatar = document.createElement("div");
-    avatar.className = "avatar";
-    const img = document.createElement("img");
-    img.src = assistantAvatarSrc;
-    img.alt = "Assistant EPITECH";
-    avatar.appendChild(img);
-    msg.appendChild(avatar);
-    msg.appendChild(bubble);
+  function getSessionId() {
+    const existing = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (existing) return existing;
+    const generated = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(SESSION_STORAGE_KEY, generated);
+    return generated;
   }
 
-  chatWindow.appendChild(msg);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
-  return bubble;
-}
+  function openWidget() {
+    widget.classList.add("is-open");
+    widget.setAttribute("aria-hidden", "false");
+    input.focus();
+  }
 
-function syncButtonState() {
-  if (!chatButton || !chatInput) return;
-  chatButton.disabled = chatInput.disabled || chatInput.value.trim().length === 0;
-}
+  function closeWidget() {
+    widget.classList.remove("is-open");
+    widget.setAttribute("aria-hidden", "true");
+    openBtn.focus();
+  }
 
-if (chatForm && chatInput && chatButton && chatWindow) {
-  const sessionId = getSessionId();
+  openBtn.addEventListener("click", () => {
+    if (widget.classList.contains("is-open")) closeWidget();
+    else openWidget();
+  });
 
-  chatInput.addEventListener("input", syncButtonState);
-  syncButtonState();
-  checkHealth();
+  closeBtn.addEventListener("click", closeWidget);
 
-  chatForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const message = chatInput.value.trim();
-    if (!message) return;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && widget.classList.contains("is-open")) closeWidget();
+  });
 
-    appendMessage("user", message);
-    chatInput.value = "";
-    syncButtonState();
+  // Ajoute un message dans le widget
+  function addMessage(who, text) {
+    const msg = document.createElement("div");
+    msg.classList.add("msg", who === "user" ? "msg-user" : "msg-bot");
 
-    chatInput.disabled = true;
-    chatButton.disabled = true;
-    const pendingBubble = appendMessage("bot", "L'assistant reflechit...");
+    const bubble = document.createElement("div");
+    bubble.classList.add("bubble");
+    bubble.textContent = text;
+
+    if (who === "bot") {
+      const avatar = document.createElement("div");
+      avatar.classList.add("avatar");
+      const img = document.createElement("img");
+      img.src = "images/logo-AE.png";
+      img.alt = "Assistant EPITECH";
+      avatar.appendChild(img);
+
+      msg.appendChild(avatar);
+      msg.appendChild(bubble);
+    } else {
+      const avatar = document.createElement("div");
+      avatar.classList.add("avatar", "user");
+      avatar.setAttribute("aria-hidden", "true");
+      avatar.textContent = "Vous";
+
+      msg.appendChild(bubble);
+      msg.appendChild(avatar);
+    }
+
+    body.appendChild(msg);
+    body.scrollTop = body.scrollHeight;
+    return bubble;
+  }
+
+  // Envoi formulaire
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+
+    addMessage("user", text);
+    input.value = "";
+
+    const btn = form.querySelector("button");
+    if (btn) btn.disabled = true;
+    input.disabled = true;
+
+    const thinkingBubble = addMessage("bot", "L'IA reflechit...");
 
     try {
       const response = await fetch(`${API_BASE_URL}/chat`, {
@@ -124,8 +127,8 @@ if (chatForm && chatInput && chatButton && chatWindow) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          message,
-          session_id: sessionId,
+          message: text,
+          session_id: getSessionId(),
         }),
       });
 
@@ -135,20 +138,19 @@ if (chatForm && chatInput && chatButton && chatWindow) {
 
       const data = await response.json();
       const answer = data && data.answer ? data.answer : "Je n'ai pas de reponse pour le moment.";
-      if (pendingBubble) {
-        pendingBubble.textContent = answer;
+      if (thinkingBubble) {
+        thinkingBubble.textContent = answer;
       }
-      setStatus(true, "Connecte");
     } catch (error) {
-      if (pendingBubble) {
-        pendingBubble.textContent =
+      if (thinkingBubble) {
+        thinkingBubble.textContent =
           "Impossible de joindre le backend. Verifie qu'il est demarre et que le port correspond.";
       }
-      setStatus(false, "Backend indisponible");
     } finally {
-      chatInput.disabled = false;
-      syncButtonState();
-      chatInput.focus();
+      if (btn) btn.disabled = false;
+      input.disabled = false;
+      input.focus();
+      body.scrollTop = body.scrollHeight;
     }
   });
-}
+})();
