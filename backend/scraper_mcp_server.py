@@ -1,7 +1,8 @@
 # scraper_mcp_server.py
 from fastmcp import FastMCP, Context
 import httpx
-from bs4 import BeautifulSoup
+
+from html_extract import extract_main_text
 
 # Nom logique du serveur MCP
 mcp = FastMCP("EpitechScraperServer")
@@ -19,9 +20,7 @@ async def scrape_url(url: str, ctx: Context):
         resp = await client.get(url, timeout=20)
     resp.raise_for_status()
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    main = soup.find("main") or soup.body
-    text = " ".join(main.stripped_strings) if main else ""
+    text = extract_main_text(resp.text)
 
     # On limite la taille pour éviter les contextes trop gros
     return {

@@ -5,6 +5,11 @@ from typing import Dict, List, Tuple
 from knowledge import load_local_knowledge
 from scraper import scrape_epitech_page  # scraping HTTP simple
 
+MAX_MESSAGE_CHARS = 800
+MAX_PROMPT_CHARS = 12000
+MAX_HISTORY_CHARS = 2000
+MAX_HISTORY_ITEM_CHARS = 500
+
 # Chargement des fichiers .txt du dossier data/epitech
 LOCAL_KNOWLEDGE = load_local_knowledge()
 
@@ -103,6 +108,34 @@ def build_knowledge_context() -> str:
     return "\n\n".join(lines) + "\n\n"
 
 
+def clamp_text(text: str, max_chars: int, from_end: bool = False) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:] if from_end else text[:max_chars]
+
+
+def compose_prompt(
+    system_context: str,
+    knowledge_context: str,
+    local_docs_context: str,
+    external_knowledge: str,
+    history_text: str,
+    user_message: str,
+) -> str:
+    return (
+        system_context
+        + "Voici quelques informations de reference sur EPITECH :\n"
+        + knowledge_context
+        + local_docs_context
+        + external_knowledge
+        + history_text
+        + f"Utilisateur : {user_message}\n"
+        + "En t'appuyant uniquement sur les informations ci-dessus, reponds precisement a la question.\n"
+        + "Si certaines informations manquent, dis-le clairement et reste factuel.\n"
+        + "Assistant :"
+    )
+
+
 # session_id -> liste de (role, content)
 conversations: Dict[str, List[Tuple[str, str]]] = {}
 
@@ -135,6 +168,13 @@ async def run_agent(user_message: str, session_id: str) -> str:
     Gère une conversation par session_id et répond uniquement sur la base
     des informations EPITECH (locales + scraping HTTP).
     """
+    # Hard limits for payload size
+    if len(user_message) > MAX_MESSAGE_CHARS:
+        return (
+            "Message trop long. Merci de limiter votre question a "
+            f"{MAX_MESSAGE_CHARS} caracteres."
+        )
+
     # Historique
     history = conversations.get(session_id, [])
     history.append(("user", user_message))
@@ -160,7 +200,9 @@ async def run_agent(user_message: str, session_id: str) -> str:
     history_text = ""
     for role, content in history[:-1]:
         prefix = "Utilisateur" if role == "user" else "Assistant"
-        history_text += f"{prefix} : {content}\n"
+        trimmed = clamp_text(content, MAX_HISTORY_ITEM_CHARS)
+        history_text += f"{prefix} : {trimmed}\n"
+    history_text = clamp_text(history_text, MAX_HISTORY_CHARS, from_end=True)
 
     # Scraping : logique centralisée
     scraped_text = ""
@@ -190,19 +232,44 @@ async def run_agent(user_message: str, session_id: str) -> str:
         else ""
     )
 
-    # Prompt final
-    prompt = (
-        system_context
-        + "Voici quelques informations de référence sur EPITECH :\n"
-        + knowledge_context
-        + local_docs_context
-        + external_knowledge
-        + history_text
-        + f"Utilisateur : {user_message}\n"
-        + "En t'appuyant uniquement sur les informations ci-dessus, réponds précisément à la question.\n"
-        + "Si certaines informations manquent, dis-le clairement et reste factuel.\n"
-        + "Assistant :"
+    # Prompt final with size cap
+    prompt = compose_prompt(
+        system_context,
+        knowledge_context,
+        local_docs_context,
+        external_knowledge,
+        history_text,
+        user_message,
     )
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = compose_prompt(
+            system_context,
+            knowledge_context,
+            local_docs_context,
+            "",
+            history_text,
+            user_message,
+        )
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = compose_prompt(
+            system_context,
+            knowledge_context,
+            "",
+            "",
+            history_text,
+            user_message,
+        )
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = compose_prompt(
+            system_context,
+            knowledge_context,
+            "",
+            "",
+            "",
+            user_message,
+        )
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = clamp_text(prompt, MAX_PROMPT_CHARS)
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(

@@ -1,6 +1,7 @@
 # scraper.py
 import httpx
-from bs4 import BeautifulSoup
+
+from html_extract import extract_main_text
 
 BASE_URL = "https://www.epitech.eu"
 
@@ -12,7 +13,4 @@ def scrape_epitech_page(path: str) -> str:
     resp = httpx.get(url, timeout=20)
     resp.raise_for_status()
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    main = soup.find("main") or soup.body
-    text = " ".join(main.stripped_strings) if main else ""
-    return text
+    return extract_main_text(resp.text)

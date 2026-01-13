@@ -1,15 +1,17 @@
 # mcp_client.py
 from typing import Optional, Dict, Any
 import asyncio
+from pathlib import Path
+import sys
 
 from mcp.client import Client, StdioServerParameters  # <-- ligne corrigée
 
 
 SCRAPER_SERVER = StdioServerParameters(
-    command="python",
-    args=["scraper_mcp_server.py"],
+    command=sys.executable,
+    args=[str(Path(__file__).parent / "scraper_mcp_server.py")],
     env=None,
-    cwd=None,
+    cwd=str(Path(__file__).parent),
 )
 
 
