@@ -1,5 +1,7 @@
 # agent.py
 import httpx
+import logging
+import time
 from typing import Dict, List, Tuple
 
 from knowledge import load_local_knowledge
@@ -12,15 +14,17 @@ MAX_HISTORY_ITEM_CHARS = 500
 
 # Chargement des fichiers .txt du dossier data/epitech
 LOCAL_KNOWLEDGE = load_local_knowledge()
+logger = logging.getLogger("epitech.agent")
 
 
-def select_docs_for_question(question: str) -> str:
+def select_docs_for_question(question: str) -> tuple[str, list[str]]:
     """
     Sélection simple des documents locaux en fonction des mots-clés de la question.
     On combine plusieurs fichiers si nécessaire.
     """
     q = question.lower()
     selected: List[str] = []
+    selected_keys: List[str] = []
 
     # Formations / programmes / Pré-MSc / MSc / MBA / Bachelors / PGE
     if any(w in q for w in [
@@ -36,37 +40,45 @@ def select_docs_for_question(question: str) -> str:
     ]):
         if "formations_paris" in LOCAL_KNOWLEDGE and "paris" in q:
             selected.append(LOCAL_KNOWLEDGE["formations_paris"])
+            selected_keys.append("formations_paris")
         if "formations" in LOCAL_KNOWLEDGE:
             selected.append(LOCAL_KNOWLEDGE["formations"])
+            selected_keys.append("formations")
 
     # Admissions / inscription / candidature
     if any(w in q for w in ["admission", "inscription", "candidature", "concours", "parcoursup"]):
         if "admissions" in LOCAL_KNOWLEDGE:
             selected.append(LOCAL_KNOWLEDGE["admissions"])
+            selected_keys.append("admissions")
 
     # Alternance / stage
     if any(w in q for w in ["alternance", "apprentissage", "stage", "rythme"]):
         if "alternance" in LOCAL_KNOWLEDGE:
             selected.append(LOCAL_KNOWLEDGE["alternance"])
+            selected_keys.append("alternance")
 
     # Campus / villes
     if any(w in q for w in ["campus", "ville", "villes", "où se trouve", "où est situé"]):
         if "campus" in LOCAL_KNOWLEDGE:
             selected.append(LOCAL_KNOWLEDGE["campus"])
+            selected_keys.append("campus")
 
     # Partenaires / entreprises / réseau
     if any(w in q for w in ["partenaire", "partenaires", "entreprise", "entreprises", "réseau"]):
         if "partenaires" in LOCAL_KNOWLEDGE:
             selected.append(LOCAL_KNOWLEDGE["partenaires"])
+            selected_keys.append("partenaires")
 
     # Contexte global minimal si rien n'est matché
     if not selected:
         if "formations" in LOCAL_KNOWLEDGE:
             selected.append(LOCAL_KNOWLEDGE["formations"])
+            selected_keys.append("formations")
         if "campus" in LOCAL_KNOWLEDGE:
             selected.append(LOCAL_KNOWLEDGE["campus"])
+            selected_keys.append("campus")
 
-    return "\n\n".join(selected)
+    return "\n\n".join(selected), selected_keys
 
 
 # Petite FAQ EPITECH codée en dur (contexte supplémentaire)
@@ -112,6 +124,10 @@ def clamp_text(text: str, max_chars: int, from_end: bool = False) -> str:
     if len(text) <= max_chars:
         return text
     return text[-max_chars:] if from_end else text[:max_chars]
+
+
+def preview_text(text: str, max_chars: int = 120) -> str:
+    return clamp_text(text.replace("\n", " ").strip(), max_chars)
 
 
 def compose_prompt(
@@ -168,8 +184,12 @@ async def run_agent(user_message: str, session_id: str) -> str:
     Gère une conversation par session_id et répond uniquement sur la base
     des informations EPITECH (locales + scraping HTTP).
     """
+    start_time = time.monotonic()
+    logger.info("agent start session_id=%s message_len=%d", session_id, len(user_message))
+
     # Hard limits for payload size
     if len(user_message) > MAX_MESSAGE_CHARS:
+        logger.warning("agent reject session_id=%s reason=message_too_long", session_id)
         return (
             "Message trop long. Merci de limiter votre question a "
             f"{MAX_MESSAGE_CHARS} caracteres."
@@ -180,6 +200,7 @@ async def run_agent(user_message: str, session_id: str) -> str:
     history.append(("user", user_message))
     history = history[-6:]
     conversations[session_id] = history
+    logger.info("agent history session_id=%s items=%d", session_id, len(history))
 
     # Rôle système : on insiste sur "réponds de manière structurée et pédagogique"
     system_context = (
@@ -204,14 +225,18 @@ async def run_agent(user_message: str, session_id: str) -> str:
         history_text += f"{prefix} : {trimmed}\n"
     history_text = clamp_text(history_text, MAX_HISTORY_CHARS, from_end=True)
 
-    # Scraping : logique centralisée
+    # Scraping : logique centralisee
     scraped_text = ""
     path = choose_scraping_path(user_message)
     if path is not None:
+        logger.info("agent scraping session_id=%s path=%s", session_id, path)
         try:
             scraped_text = scrape_epitech_page(path)
         except Exception:
             scraped_text = ""
+        logger.info("agent scraping done session_id=%s chars=%d", session_id, len(scraped_text))
+    else:
+        logger.info("agent scraping skip session_id=%s", session_id)
 
     external_knowledge = ""
     if scraped_text:
@@ -223,7 +248,12 @@ async def run_agent(user_message: str, session_id: str) -> str:
 
     # FAQ + docs locaux
     knowledge_context = build_knowledge_context()
-    local_docs_text = select_docs_for_question(user_message)
+    local_docs_text, local_doc_keys = select_docs_for_question(user_message)
+    logger.info(
+        "agent local docs session_id=%s keys=%s",
+        session_id,
+        ",".join(local_doc_keys) if local_doc_keys else "none",
+    )
     local_docs_context = (
         "Voici des informations provenant de la base de connaissances locale EPITECH :\n"
         + local_docs_text[:4000]
@@ -242,6 +272,7 @@ async def run_agent(user_message: str, session_id: str) -> str:
         user_message,
     )
     if len(prompt) > MAX_PROMPT_CHARS:
+        logger.info("agent prompt trim session_id=%s step=drop_external", session_id)
         prompt = compose_prompt(
             system_context,
             knowledge_context,
@@ -251,6 +282,7 @@ async def run_agent(user_message: str, session_id: str) -> str:
             user_message,
         )
     if len(prompt) > MAX_PROMPT_CHARS:
+        logger.info("agent prompt trim session_id=%s step=drop_local", session_id)
         prompt = compose_prompt(
             system_context,
             knowledge_context,
@@ -260,6 +292,7 @@ async def run_agent(user_message: str, session_id: str) -> str:
             user_message,
         )
     if len(prompt) > MAX_PROMPT_CHARS:
+        logger.info("agent prompt trim session_id=%s step=drop_history", session_id)
         prompt = compose_prompt(
             system_context,
             knowledge_context,
@@ -269,7 +302,9 @@ async def run_agent(user_message: str, session_id: str) -> str:
             user_message,
         )
     if len(prompt) > MAX_PROMPT_CHARS:
+        logger.info("agent prompt trim session_id=%s step=hard_cap", session_id)
         prompt = clamp_text(prompt, MAX_PROMPT_CHARS)
+    logger.info("agent prompt ready session_id=%s chars=%d", session_id, len(prompt))
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -284,6 +319,12 @@ async def run_agent(user_message: str, session_id: str) -> str:
 
     data = resp.json()
     answer = data.get("response", "").strip()
+    logger.info(
+        "agent model response session_id=%s chars=%d preview=%s",
+        session_id,
+        len(answer),
+        preview_text(answer),
+    )
 
     # === GARDE-FOUS POSITIFS (ciblés) ===
     la = answer.lower()
@@ -357,5 +398,6 @@ async def run_agent(user_message: str, session_id: str) -> str:
     # Ajout à l'historique
     history.append(("assistant", answer))
     conversations[session_id] = history
+    logger.info("agent done session_id=%s elapsed_ms=%d", session_id, int((time.monotonic() - start_time) * 1000))
 
     return answer
