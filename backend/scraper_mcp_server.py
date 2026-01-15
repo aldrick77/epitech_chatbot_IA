@@ -8,7 +8,7 @@ import httpx
 from html_extract import extract_main_text
 
 # Nom logique du serveur MCP
-mcp = FastMCP("EpitechScraperServer", log_level="WARNING")
+mcp = FastMCP("EpitechScraperServer")
 
 DATA_DIR = Path(__file__).parent / "data" / "epitech"
 DOC_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -21,7 +21,7 @@ async def scrape_url(url: str, ctx: Context):
     - url : URL complète (https://...) à scraper.
     """
     async with httpx.AsyncClient() as client:
-        resp = await client.get(url, timeout=20)
+        resp = await client.get(url, timeout=20, follow_redirects=True)
     resp.raise_for_status()
 
     text = extract_main_text(resp.text)
@@ -69,4 +69,4 @@ async def local_doc(name: str, ctx: Context) -> str:
 
 if __name__ == "__main__":
     # Lance le serveur MCP (processus dédié)
-    mcp.run(show_banner=False)
+    mcp.run(show_banner=False, log_level="WARNING")

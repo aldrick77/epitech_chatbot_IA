@@ -303,8 +303,9 @@ async def fetch_scraped_text(path: str) -> str:
         except Exception:
             scraped = ""
 
-    put_cached_scrape(url, scraped)
-    return scraped
+    if scraped:
+        put_cached_scrape(url, scraped)
+    return scraped or ""
 
 
 async def run_agent(user_message: str, session_id: str) -> str:

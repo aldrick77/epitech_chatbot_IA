@@ -29,11 +29,13 @@ makeSlider(".hero-bg-slide", 4500);
   const form = document.getElementById("chat-widget-form");
   const input = document.getElementById("chat-input");
   const body = document.getElementById("chat-widget-body");
+  const promptButtons = Array.from(document.querySelectorAll("[data-prompt]"));
   const BACKEND_PORT = 8000;
   const API_PROTOCOL = window.location.protocol === "https:" ? "https" : "http";
   const API_HOST = window.location.hostname || "127.0.0.1";
   const API_BASE_URL = `${API_PROTOCOL}://${API_HOST}:${BACKEND_PORT}`;
   const SESSION_STORAGE_KEY = "epitech-chat-session-id";
+  let isSending = false;
 
   // Si tu n'as pas encore ajouté le HTML du widget, on évite les erreurs
   if (!openBtn || !closeBtn || !widget || !form || !input || !body) return;
@@ -60,6 +62,31 @@ makeSlider(".hero-bg-slide", 4500);
     openBtn.focus();
   }
 
+  function setPromptButtonsDisabled(disabled) {
+    promptButtons.forEach((btn) => {
+      btn.disabled = disabled;
+    });
+  }
+
+  function applyPrompt(prompt, { autoSend = true } = {}) {
+    if (!prompt) return;
+    if (isSending) return;
+    if (!widget.classList.contains("is-open")) openWidget();
+    input.value = prompt;
+    input.focus();
+    if (autoSend) {
+      if (typeof form.requestSubmit === "function") form.requestSubmit();
+      else form.dispatchEvent(new Event("submit", { cancelable: true }));
+    }
+  }
+
+  promptButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const prompt = btn.getAttribute("data-prompt");
+      applyPrompt(prompt, { autoSend: true });
+    });
+  });
+
   openBtn.addEventListener("click", () => {
     if (widget.classList.contains("is-open")) closeWidget();
     else openWidget();
@@ -71,6 +98,26 @@ makeSlider(".hero-bg-slide", 4500);
     if (e.key === "Escape" && widget.classList.contains("is-open")) closeWidget();
   });
 
+  function escapeHtml(text) {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function renderMarkdown(text) {
+    let safe = escapeHtml(text);
+    safe = safe.replace(/^###\s+(.+)$/gm, '<div class="chat-md-h3">$1</div>');
+    safe = safe.replace(/^##\s+(.+)$/gm, '<div class="chat-md-h2">$1</div>');
+    safe = safe.replace(/^#\s+(.+)$/gm, '<div class="chat-md-h1">$1</div>');
+    safe = safe.replace(/`([^`]+)`/g, "<code>$1</code>");
+    safe = safe.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    safe = safe.replace(/\n/g, "<br>");
+    return safe;
+  }
+
   // Ajoute un message dans le widget
   function addMessage(who, text) {
     const msg = document.createElement("div");
@@ -78,7 +125,8 @@ makeSlider(".hero-bg-slide", 4500);
 
     const bubble = document.createElement("div");
     bubble.classList.add("bubble");
-    bubble.textContent = text;
+    if (who === "bot") bubble.innerHTML = renderMarkdown(text);
+    else bubble.textContent = text;
 
     if (who === "bot") {
       const avatar = document.createElement("div");
@@ -108,8 +156,10 @@ makeSlider(".hero-bg-slide", 4500);
   // Envoi formulaire
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (isSending || input.disabled) return;
     const text = input.value.trim();
     if (!text) return;
+    isSending = true;
 
     addMessage("user", text);
     input.value = "";
@@ -117,6 +167,7 @@ makeSlider(".hero-bg-slide", 4500);
     const btn = form.querySelector("button");
     if (btn) btn.disabled = true;
     input.disabled = true;
+    setPromptButtonsDisabled(true);
 
     const thinkingBubble = addMessage("bot", "L'IA reflechit...");
 
@@ -139,16 +190,19 @@ makeSlider(".hero-bg-slide", 4500);
       const data = await response.json();
       const answer = data && data.answer ? data.answer : "Je n'ai pas de reponse pour le moment.";
       if (thinkingBubble) {
-        thinkingBubble.textContent = answer;
+        thinkingBubble.innerHTML = renderMarkdown(answer);
       }
     } catch (error) {
       if (thinkingBubble) {
-        thinkingBubble.textContent =
-          "Impossible de joindre le backend. Verifie qu'il est demarre et que le port correspond.";
+        thinkingBubble.innerHTML = renderMarkdown(
+          "Impossible de joindre le backend. Verifie qu'il est demarre et que le port correspond."
+        );
       }
     } finally {
+      isSending = false;
       if (btn) btn.disabled = false;
       input.disabled = false;
+      setPromptButtonsDisabled(false);
       input.focus();
       body.scrollTop = body.scrollHeight;
     }
