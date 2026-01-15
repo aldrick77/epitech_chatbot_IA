@@ -69,8 +69,3 @@ async def fetch_local_knowledge() -> Optional[Dict[str, str]]:
         return None
 
 
-def scrape_url_sync(url: str) -> Optional[str]:
-    try:
-        return asyncio.run(call_scrape_url(url))
-    except RuntimeError:
-        return None
