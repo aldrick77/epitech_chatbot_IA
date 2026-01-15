@@ -1,23 +1,47 @@
 # agent.py
 import httpx
 import logging
+import re
 import time
-from typing import Dict, List, Tuple
+import unicodedata
+from typing import Dict, List, Tuple, Optional
 
-from knowledge import load_local_knowledge
-from scraper import scrape_epitech_page  # scraping HTTP simple
+from knowledge import load_local_knowledge as load_local_knowledge_files
+from scraper import scrape_epitech_page, BASE_URL  # scraping HTTP simple
+from mcp_client import call_scrape_url, fetch_local_knowledge
 
 MAX_MESSAGE_CHARS = 800
 MAX_PROMPT_CHARS = 12000
 MAX_HISTORY_CHARS = 2000
 MAX_HISTORY_ITEM_CHARS = 500
+SCRAPE_CACHE_TTL_SEC = 1800
+LOCAL_KNOWLEDGE_TTL_SEC = 600
 
-# Chargement des fichiers .txt du dossier data/epitech
-LOCAL_KNOWLEDGE = load_local_knowledge()
 logger = logging.getLogger("epitech.agent")
 
+SCRAPE_CACHE: Dict[str, Tuple[float, str]] = {}
+LOCAL_KNOWLEDGE: Dict[str, str] = {}
+LOCAL_KNOWLEDGE_CACHE_AT = 0.0
+LOCAL_KNOWLEDGE_FALLBACK = load_local_knowledge_files()
 
-def select_docs_for_question(question: str) -> tuple[str, list[str]]:
+GREETING_TOKENS = {
+    "bonjour",
+    "bonsoir",
+    "salut",
+    "hello",
+    "hey",
+    "yo",
+    "coucou",
+    "cc",
+    "bjr",
+    "bsr",
+    "slt",
+}
+SMALL_TALK_TOKENS = {"comment", "ca", "va", "cv", "cava", "commentcava"}
+GIBBERISH_MAX_LEN = 12
+
+
+def select_docs_for_question(question: str, knowledge: Dict[str, str]) -> tuple[str, list[str]]:
     """
     Sélection simple des documents locaux en fonction des mots-clés de la question.
     On combine plusieurs fichiers si nécessaire.
@@ -38,44 +62,44 @@ def select_docs_for_question(question: str) -> tuple[str, list[str]]:
         "msc",
         "mba",
     ]):
-        if "formations_paris" in LOCAL_KNOWLEDGE and "paris" in q:
-            selected.append(LOCAL_KNOWLEDGE["formations_paris"])
+        if "formations_paris" in knowledge and "paris" in q:
+            selected.append(knowledge["formations_paris"])
             selected_keys.append("formations_paris")
-        if "formations" in LOCAL_KNOWLEDGE:
-            selected.append(LOCAL_KNOWLEDGE["formations"])
+        if "formations" in knowledge:
+            selected.append(knowledge["formations"])
             selected_keys.append("formations")
 
     # Admissions / inscription / candidature
     if any(w in q for w in ["admission", "inscription", "candidature", "concours", "parcoursup"]):
-        if "admissions" in LOCAL_KNOWLEDGE:
-            selected.append(LOCAL_KNOWLEDGE["admissions"])
+        if "admissions" in knowledge:
+            selected.append(knowledge["admissions"])
             selected_keys.append("admissions")
 
     # Alternance / stage
     if any(w in q for w in ["alternance", "apprentissage", "stage", "rythme"]):
-        if "alternance" in LOCAL_KNOWLEDGE:
-            selected.append(LOCAL_KNOWLEDGE["alternance"])
+        if "alternance" in knowledge:
+            selected.append(knowledge["alternance"])
             selected_keys.append("alternance")
 
     # Campus / villes
     if any(w in q for w in ["campus", "ville", "villes", "où se trouve", "où est situé"]):
-        if "campus" in LOCAL_KNOWLEDGE:
-            selected.append(LOCAL_KNOWLEDGE["campus"])
+        if "campus" in knowledge:
+            selected.append(knowledge["campus"])
             selected_keys.append("campus")
 
     # Partenaires / entreprises / réseau
     if any(w in q for w in ["partenaire", "partenaires", "entreprise", "entreprises", "réseau"]):
-        if "partenaires" in LOCAL_KNOWLEDGE:
-            selected.append(LOCAL_KNOWLEDGE["partenaires"])
+        if "partenaires" in knowledge:
+            selected.append(knowledge["partenaires"])
             selected_keys.append("partenaires")
 
     # Contexte global minimal si rien n'est matché
     if not selected:
-        if "formations" in LOCAL_KNOWLEDGE:
-            selected.append(LOCAL_KNOWLEDGE["formations"])
+        if "formations" in knowledge:
+            selected.append(knowledge["formations"])
             selected_keys.append("formations")
-        if "campus" in LOCAL_KNOWLEDGE:
-            selected.append(LOCAL_KNOWLEDGE["campus"])
+        if "campus" in knowledge:
+            selected.append(knowledge["campus"])
             selected_keys.append("campus")
 
     return "\n\n".join(selected), selected_keys
@@ -130,6 +154,57 @@ def preview_text(text: str, max_chars: int = 120) -> str:
     return clamp_text(text.replace("\n", " ").strip(), max_chars)
 
 
+def normalize_text(text: str) -> str:
+    text = text.strip().lower()
+    text = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in text if not unicodedata.combining(c))
+
+
+def tokenize_text(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text)
+
+
+def is_small_talk(text: str) -> bool:
+    normalized = normalize_text(text)
+    tokens = tokenize_text(normalized)
+    if not tokens:
+        return False
+    allowed = GREETING_TOKENS | SMALL_TALK_TOKENS
+    if not all(token in allowed for token in tokens):
+        return False
+    return any(token in GREETING_TOKENS or token in SMALL_TALK_TOKENS for token in tokens)
+
+
+def is_gibberish(text: str) -> bool:
+    normalized = normalize_text(text)
+    tokens = tokenize_text(normalized)
+    if len(tokens) != 1:
+        return False
+    if tokens[0] in GREETING_TOKENS or tokens[0] in SMALL_TALK_TOKENS:
+        return False
+    letters = re.sub(r"[^a-z]", "", normalized)
+    if not letters or len(letters) < 3 or len(letters) > GIBBERISH_MAX_LEN:
+        return False
+    vowels = set("aeiouy")
+    vowel_count = sum(1 for c in letters if c in vowels)
+    if vowel_count == 0:
+        return True
+    max_consonants = 0
+    run = 0
+    for c in letters:
+        if c in vowels:
+            run = 0
+        else:
+            run += 1
+            if run > max_consonants:
+                max_consonants = run
+    if max_consonants >= 4:
+        return True
+    if (vowel_count / len(letters)) < 0.25:
+        return True
+    return False
+
+
 def compose_prompt(
     system_context: str,
     knowledge_context: str,
@@ -179,6 +254,59 @@ def choose_scraping_path(question: str) -> str | None:
     return None
 
 
+async def get_local_knowledge() -> Dict[str, str]:
+    global LOCAL_KNOWLEDGE, LOCAL_KNOWLEDGE_CACHE_AT
+    now = time.monotonic()
+    if LOCAL_KNOWLEDGE and (now - LOCAL_KNOWLEDGE_CACHE_AT) < LOCAL_KNOWLEDGE_TTL_SEC:
+        return LOCAL_KNOWLEDGE
+
+    mcp_knowledge = await fetch_local_knowledge()
+    if mcp_knowledge is None:
+        if not LOCAL_KNOWLEDGE:
+            LOCAL_KNOWLEDGE = LOCAL_KNOWLEDGE_FALLBACK
+        LOCAL_KNOWLEDGE_CACHE_AT = now
+        return LOCAL_KNOWLEDGE
+
+    LOCAL_KNOWLEDGE = mcp_knowledge
+    LOCAL_KNOWLEDGE_CACHE_AT = now
+    return LOCAL_KNOWLEDGE
+
+
+def get_cached_scrape(url: str) -> Optional[str]:
+    cached = SCRAPE_CACHE.get(url)
+    if not cached:
+        return None
+    cached_at, text = cached
+    if (time.monotonic() - cached_at) > SCRAPE_CACHE_TTL_SEC:
+        SCRAPE_CACHE.pop(url, None)
+        return None
+    return text
+
+
+def put_cached_scrape(url: str, text: str) -> None:
+    SCRAPE_CACHE[url] = (time.monotonic(), text)
+
+
+async def fetch_scraped_text(path: str) -> str:
+    url = f"{BASE_URL}{path}"
+    cached = get_cached_scrape(url)
+    if cached is not None:
+        logger.info("agent scraping cache hit url=%s chars=%d", url, len(cached))
+        return cached
+
+    logger.info("agent scraping cache miss url=%s", url)
+    scraped = await call_scrape_url(url)
+    if scraped is None:
+        logger.warning("agent scraping via mcp failed url=%s fallback=direct", url)
+        try:
+            scraped = scrape_epitech_page(path)
+        except Exception:
+            scraped = ""
+
+    put_cached_scrape(url, scraped)
+    return scraped
+
+
 async def run_agent(user_message: str, session_id: str) -> str:
     """
     Gère une conversation par session_id et répond uniquement sur la base
@@ -201,6 +329,27 @@ async def run_agent(user_message: str, session_id: str) -> str:
     history = history[-6:]
     conversations[session_id] = history
     logger.info("agent history session_id=%s items=%d", session_id, len(history))
+
+    if is_small_talk(user_message):
+        answer = (
+            "Bonjour ! Ca va bien, merci. "
+            "Je suis l'assistant EPITECH. "
+            "Pose-moi une question sur les formations, admissions, alternance ou campus."
+        )
+        history.append(("assistant", answer))
+        conversations[session_id] = history
+        logger.info("agent short-circuit session_id=%s reason=small_talk", session_id)
+        return answer
+
+    if is_gibberish(user_message):
+        answer = (
+            "Je n'ai pas compris votre message. "
+            "Pouvez-vous reformuler votre question sur EPITECH ?"
+        )
+        history.append(("assistant", answer))
+        conversations[session_id] = history
+        logger.info("agent short-circuit session_id=%s reason=gibberish", session_id)
+        return answer
 
     # Rôle système : on insiste sur "réponds de manière structurée et pédagogique"
     system_context = (
@@ -225,15 +374,12 @@ async def run_agent(user_message: str, session_id: str) -> str:
         history_text += f"{prefix} : {trimmed}\n"
     history_text = clamp_text(history_text, MAX_HISTORY_CHARS, from_end=True)
 
-    # Scraping : logique centralisee
+    # Scraping : logique centralisee (MCP + cache, fallback HTTP direct)
     scraped_text = ""
     path = choose_scraping_path(user_message)
     if path is not None:
         logger.info("agent scraping session_id=%s path=%s", session_id, path)
-        try:
-            scraped_text = scrape_epitech_page(path)
-        except Exception:
-            scraped_text = ""
+        scraped_text = await fetch_scraped_text(path)
         logger.info("agent scraping done session_id=%s chars=%d", session_id, len(scraped_text))
     else:
         logger.info("agent scraping skip session_id=%s", session_id)
@@ -248,7 +394,8 @@ async def run_agent(user_message: str, session_id: str) -> str:
 
     # FAQ + docs locaux
     knowledge_context = build_knowledge_context()
-    local_docs_text, local_doc_keys = select_docs_for_question(user_message)
+    local_knowledge = await get_local_knowledge()
+    local_docs_text, local_doc_keys = select_docs_for_question(user_message, local_knowledge)
     logger.info(
         "agent local docs session_id=%s keys=%s",
         session_id,
