@@ -1,3 +1,6 @@
 .venv
 __pycache__
-.DS_Storebackend/data/
+.DS_Store
+backend/.env
+.env
+test_routing.py

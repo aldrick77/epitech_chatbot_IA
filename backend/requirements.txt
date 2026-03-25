@@ -5,3 +5,5 @@ beautifulsoup4
 pydantic
 fastmcp
 mcp
+groq
+python-dotenv

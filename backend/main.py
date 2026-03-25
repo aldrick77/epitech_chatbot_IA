@@ -3,6 +3,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from agent import run_agent  # logique IA dans agent.py
 from logging_utils import setup_logging
@@ -36,10 +37,8 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post("/chat")
 async def chat(req: ChatRequest):
     logger.info("chat request session_id=%s message_len=%d", req.session_id, len(req.message))
-    # Appel à la logique d'agent qui utilise Ollama
-    answer = await run_agent(req.message, req.session_id)
-    logger.info("chat response session_id=%s answer_len=%d", req.session_id, len(answer))
-    return ChatResponse(answer=answer)
+    # Appel à la logique d'agent qui stream les tokens
+    return StreamingResponse(run_agent(req.message, req.session_id), media_type="text/plain")

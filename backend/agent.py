@@ -1,10 +1,18 @@
 # agent.py
 import httpx
 import logging
+import os
 import re
 import time
 import unicodedata
 from typing import Dict, List, Tuple, Optional
+
+from dotenv import load_dotenv
+from groq import AsyncGroq
+
+load_dotenv()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = "llama-3.3-70b-versatile"
 
 from knowledge import load_local_knowledge as load_local_knowledge_files
 from scraper import scrape_epitech_page, BASE_URL  # scraping HTTP simple
@@ -43,105 +51,24 @@ GIBBERISH_MAX_LEN = 12
 
 def select_docs_for_question(question: str, knowledge: Dict[str, str]) -> tuple[str, list[str]]:
     """
-    Sélection simple des documents locaux en fonction des mots-clés de la question.
-    On combine plusieurs fichiers si nécessaire.
+    Injecte TOUS les documents locaux dans le contexte.
+    Les fichiers data/epitech/*.txt font ~6 Ko au total,
+    c'est suffisamment petit pour tout envoyer au LLM.
     """
-    q = question.lower()
-    selected: List[str] = []
-    selected_keys: List[str] = []
+    if not knowledge:
+        return "", []
 
-    # Formations / programmes / Pré-MSc / MSc / MBA / Bachelors / PGE
-    if any(w in q for w in [
-        "formation",
-        "programme",
-        "bachelor",
-        "programme grande école",
-        "pge",
-        "pré-msc",
-        "pre-msc",
-        "msc",
-        "mba",
-    ]):
-        if "formations_paris" in knowledge and "paris" in q:
-            selected.append(knowledge["formations_paris"])
-            selected_keys.append("formations_paris")
-        if "formations" in knowledge:
-            selected.append(knowledge["formations"])
-            selected_keys.append("formations")
+    parts: List[str] = []
+    keys: List[str] = []
+    for key in sorted(knowledge.keys()):
+        parts.append(f"[{key.upper()}]\n{knowledge[key]}")
+        keys.append(key)
 
-    # Admissions / inscription / candidature
-    if any(w in q for w in ["admission", "inscription", "candidature", "concours", "parcoursup"]):
-        if "admissions" in knowledge:
-            selected.append(knowledge["admissions"])
-            selected_keys.append("admissions")
-
-    # Alternance / stage
-    if any(w in q for w in ["alternance", "apprentissage", "stage", "rythme"]):
-        if "alternance" in knowledge:
-            selected.append(knowledge["alternance"])
-            selected_keys.append("alternance")
-
-    # Campus / villes
-    if any(w in q for w in ["campus", "ville", "villes", "où se trouve", "où est situé"]):
-        if "campus" in knowledge:
-            selected.append(knowledge["campus"])
-            selected_keys.append("campus")
-
-    # Partenaires / entreprises / réseau
-    if any(w in q for w in ["partenaire", "partenaires", "entreprise", "entreprises", "réseau"]):
-        if "partenaires" in knowledge:
-            selected.append(knowledge["partenaires"])
-            selected_keys.append("partenaires")
-
-    # Contexte global minimal si rien n'est matché
-    if not selected:
-        if "formations" in knowledge:
-            selected.append(knowledge["formations"])
-            selected_keys.append("formations")
-        if "campus" in knowledge:
-            selected.append(knowledge["campus"])
-            selected_keys.append("campus")
-
-    return "\n\n".join(selected), selected_keys
-
-
-# Petite FAQ EPITECH codée en dur (contexte supplémentaire)
-EPITECH_FAQ = [
-    {
-        "question": "formations epitech paris",
-        "answer": (
-            "À EPITECH Paris, les principales formations sont : "
-            "le Programme Grande École en 5 ans, "
-            "les Bachelors spécialisés en 3 ans, "
-            "des MSc Pro dans 7 spécialités (IA, Big Data, Cybersécurité, Cloud, IoT, "
-            "Réalité virtuelle, Business Technology Management) "
-            "et plusieurs MSc/MBA orientés data, innovation et management des SI."
-        ),
-    },
-    {
-        "question": "admission epitech",
-        "answer": (
-            "L'admission à EPITECH repose sur l'étude du dossier et un entretien de motivation. "
-            "Selon le programme, la candidature se fait via Parcoursup (Programme Grande École) "
-            "ou hors Parcoursup (Bachelors, Pré‑MSc, MSc, MBA)."
-        ),
-    },
-    {
-        "question": "alternance epitech",
-        "answer": (
-            "De nombreux cursus EPITECH intègrent des stages longs et de l'alternance, "
-            "notamment en 3e année de Bachelor, en MSc Pro et en MBA Data Science & BI, "
-            "avec un fort lien au réseau d'entreprises partenaires."
-        ),
-    },
-]
+    return "\n\n".join(parts), keys
 
 
 def build_knowledge_context() -> str:
-    lines = []
-    for item in EPITECH_FAQ:
-        lines.append(f"Q: {item['question']}\nR: {item['answer']}")
-    return "\n\n".join(lines) + "\n\n"
+    return ""
 
 
 def clamp_text(text: str, max_chars: int, from_end: bool = False) -> str:
@@ -213,18 +140,20 @@ def compose_prompt(
     history_text: str,
     user_message: str,
 ) -> str:
-    return (
-        system_context
-        + "Voici quelques informations de reference sur EPITECH :\n"
-        + knowledge_context
-        + local_docs_context
-        + external_knowledge
-        + history_text
-        + f"Utilisateur : {user_message}\n"
-        + "En t'appuyant uniquement sur les informations ci-dessus, reponds precisement a la question.\n"
-        + "Si certaines informations manquent, dis-le clairement et reste factuel.\n"
-        + "Assistant :"
-    )
+    prompt = system_context
+    prompt += "--- CONTEXTE EPITECH ---\n"
+    if local_docs_context:
+        prompt += local_docs_context
+    if knowledge_context:
+        prompt += knowledge_context
+    if external_knowledge:
+        prompt += external_knowledge
+    prompt += "--- FIN CONTEXTE ---\n\n"
+    if history_text:
+        prompt += "Historique :\n" + history_text + "\n"
+    prompt += f"Question : {user_message}\n"
+    prompt += "Réponse :\n"
+    return prompt
 
 
 # session_id -> liste de (role, content)
@@ -261,7 +190,7 @@ async def get_local_knowledge() -> Dict[str, str]:
         return LOCAL_KNOWLEDGE
 
     mcp_knowledge = await fetch_local_knowledge()
-    if mcp_knowledge is None:
+    if not mcp_knowledge:  # Check if None OR empty dictionary
         if not LOCAL_KNOWLEDGE:
             LOCAL_KNOWLEDGE = LOCAL_KNOWLEDGE_FALLBACK
         LOCAL_KNOWLEDGE_CACHE_AT = now
@@ -308,10 +237,10 @@ async def fetch_scraped_text(path: str) -> str:
     return scraped or ""
 
 
-async def run_agent(user_message: str, session_id: str) -> str:
+async def run_agent(user_message: str, session_id: str):
     """
-    Gère une conversation par session_id et répond uniquement sur la base
-    des informations EPITECH (locales + scraping HTTP).
+    Gère une conversation par session_id et répond en streamant
+    les tokens au fur et à mesure (Ollama stream: True).
     """
     start_time = time.monotonic()
     logger.info("agent start session_id=%s message_len=%d", session_id, len(user_message))
@@ -319,10 +248,11 @@ async def run_agent(user_message: str, session_id: str) -> str:
     # Hard limits for payload size
     if len(user_message) > MAX_MESSAGE_CHARS:
         logger.warning("agent reject session_id=%s reason=message_too_long", session_id)
-        return (
+        yield (
             "Message trop long. Merci de limiter votre question a "
             f"{MAX_MESSAGE_CHARS} caracteres."
         )
+        return
 
     # Historique
     history = conversations.get(session_id, [])
@@ -340,7 +270,8 @@ async def run_agent(user_message: str, session_id: str) -> str:
         history.append(("assistant", answer))
         conversations[session_id] = history
         logger.info("agent short-circuit session_id=%s reason=small_talk", session_id)
-        return answer
+        yield answer
+        return
 
     if is_gibberish(user_message):
         answer = (
@@ -350,21 +281,16 @@ async def run_agent(user_message: str, session_id: str) -> str:
         history.append(("assistant", answer))
         conversations[session_id] = history
         logger.info("agent short-circuit session_id=%s reason=gibberish", session_id)
-        return answer
+        yield answer
+        return
 
-    # Rôle système : on insiste sur "réponds de manière structurée et pédagogique"
+    # Rôle système
     system_context = (
-        "Tu es un conseiller EPITECH, l'école d'informatique.\n"
-        "Tu dois répondre en français, de manière claire, structurée et concise.\n"
-        "Tu réponds UNIQUEMENT aux questions sur EPITECH : "
-        "formations, campus, modalités d'admission, alternance, frais, vie étudiante, débouchés.\n"
-        "Tu NE DOIS PAS inventer de nouvelles questions, ni faire des exercices de mathématiques, "
-        "de logique ou de culture générale qui ne concernent pas EPITECH.\n"
-        "Tu dois répondre directement à la question de l'utilisateur en utilisant les informations "
-        "fournies ci-dessous (base de connaissances locale, FAQ et extraits du site d'EPITECH).\n"
-        "Si tu ne trouves pas la réponse dans ces informations, dis-le honnêtement "
-        "et propose à l'utilisateur une autre question en lien avec EPITECH.\n\n"
-        "Structure ta réponse avec des paragraphes courts et, si utile, des puces pour comparer les options.\n\n"
+        "Tu es l'assistant EPITECH. Tu réponds toujours en français correct. "
+        "Réponds à la question en utilisant UNIQUEMENT le CONTEXTE EPITECH ci-dessous. "
+        "Si la réponse n'est pas dans le contexte, dis 'Je ne peux répondre qu'aux questions sur EPITECH.' "
+        "Si la question ne concerne pas EPITECH, dis 'Je ne peux répondre qu'aux questions sur EPITECH.' "
+        "Ne répète pas les réponses précédentes de l'historique.\n\n"
     )
 
     # Historique texte (sans le dernier message)
@@ -454,98 +380,39 @@ async def run_agent(user_message: str, session_id: str) -> str:
         prompt = clamp_text(prompt, MAX_PROMPT_CHARS)
     logger.info("agent prompt ready session_id=%s chars=%d", session_id, len(prompt))
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            "http://127.0.0.1:11434/api/generate",
-            json={
-                "model": "llama3.2",  # adapte si tu changes de modèle dans Ollama
-                "prompt": prompt,
-                "stream": False,
-            },
-            timeout=180,
-        )
-
-    data = resp.json()
-    answer = data.get("response", "").strip()
-    logger.info(
-        "agent model response session_id=%s chars=%d preview=%s",
-        session_id,
-        len(answer),
-        preview_text(answer),
+    answer = ""
+    token_buffer = ""
+    client = AsyncGroq(api_key=GROQ_API_KEY)
+    stream = await client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        stream=True,
+        temperature=0.2,
+        max_tokens=1024,
     )
+    async for chunk in stream:
+        token = chunk.choices[0].delta.content or ""
+        if token:
+            token_buffer += token
+            # Post-traitement : corrections linguistiques
+            token_buffer = token_buffer.replace("campuses", "campus")
+            token_buffer = token_buffer.replace("Campuses", "Campus")
+            # On envoie tout sauf les 10 derniers chars (au cas où un mot est coupé)
+            if len(token_buffer) > 10:
+                to_send = token_buffer[:-10]
+                token_buffer = token_buffer[-10:]
+                answer += to_send
+                yield to_send
+    # Flush du buffer restant
+    if token_buffer:
+        token_buffer = token_buffer.replace("campuses", "campus")
+        token_buffer = token_buffer.replace("Campuses", "Campus")
+        answer += token_buffer
+        yield token_buffer
 
-    # === GARDE-FOUS POSITIFS (ciblés) ===
-    la = answer.lower()
-    ql = user_message.lower()
+    logger.info("agent model response session_id=%s chars=%d", session_id, len(answer))
 
-    # 1) Questions sur le Pré-MSc
-    if any(w in ql for w in ["pré-msc", "pre-msc"]):
-        if "pré" not in la and "msc" not in la:
-            answer = (
-                "Le Pré‑MSc à EPITECH sert à consolider les fondamentaux techniques "
-                "après un bac+2 ou un bac+3 avant d’entrer en MSc Pro ou en alternance. "
-                "Pendant cette année, les étudiants renforcent leurs bases en administration "
-                "système et réseaux, programmation orientée objet, développement web, "
-                "DevOps, sécurité et méthodologie de projet, afin d’aborder sereinement "
-                "les spécialisations avancées en MSc."
-            )
-
-    # 2) Questions PGE vs Bachelors
-    elif any(w in ql for w in ["bachelor", "programme grande école", "pge"]):
-        if "bachelor" not in la or "programme grande école" not in la:
-            answer = (
-                "Le Programme Grande École (PGE) d’EPITECH est un cursus en 5 ans "
-                "qui mène à un niveau Bac+5 d’experte en technologies de l’information, "
-                "avec une forte spécialisation et un passage à l’international.\n\n"
-                "Les Bachelors sont des formations en 3 ans, plus courtes et très orientées "
-                "métiers opérationnels (développeur full stack, data/IA, cybersécurité, "
-                "cloud Web3, tech & business management). Ils permettent d’entrer rapidement "
-                "sur le marché du travail, avec la possibilité de poursuivre ensuite en Bac+5."
-            )
-
-    # 3) Questions sur l’alternance
-    elif "alternance" in ql or "apprentissage" in ql:
-        if "alternance" not in la and "entreprise" not in la:
-            answer = (
-                "L’alternance à EPITECH permet de combiner cours et expérience en entreprise. "
-                "Elle est particulièrement présente en 3e année de Bachelor, en MSc Pro et en MBA, "
-                "avec des rythmes de type 3 jours en entreprise / 2 jours en cours, "
-                "ou 4 jours en entreprise / 1 jour en cours pour certains MBA."
-            )
-
-    # 4) Questions sur les campus
-    elif any(w in ql for w in ["campus", "ville", "villes"]):
-        if not any(city in la for city in ["paris", "bordeaux", "lille", "lyon", "marseille"]):
-            answer = (
-                "EPITECH dispose d’un réseau d’environ 15 campus en France "
-                "(Paris, Bordeaux, Lille, Lyon, Marseille, Montpellier, Nancy, Nantes, "
-                "Nice, Rennes, Strasbourg, Toulouse, Mulhouse, Moulins, La Réunion) "
-                "et de plusieurs implantations en Europe."
-            )
-
-    # 5) Questions sur les admissions
-    elif any(w in ql for w in ["admission", "inscription", "candidature", "concours"]):
-        if "entretien" not in la and "dossier" not in la:
-            answer = (
-                "Les admissions à EPITECH reposent sur l’étude du dossier et un entretien "
-                "de motivation. Le Programme Grande École se fait via Parcoursup, tandis "
-                "que les Bachelors, Pré‑MSc, MSc Pro et MBA recrutent hors Parcoursup, "
-                "sur candidature en ligne puis entretien."
-            )
-
-    # ⚠️ SUPPRESSION du garde-fou global bloquant
-    # À la place, si la réponse ne mentionne pas EPITECH, on renvoie quelque chose de neutre.
-    la = answer.lower()
-    if "epitech" not in la:
-        answer = (
-            "Je ne suis pas certain d’avoir bien répondu à ta question sur EPITECH. "
-            "Peux-tu préciser si tu veux parler des formations, des admissions, de l’alternance "
-            "ou des campus EPITECH ?"
-        )
-
-    # Ajout à l'historique
+    # Ajout à l'historique une fois terminé
     history.append(("assistant", answer))
     conversations[session_id] = history
     logger.info("agent done session_id=%s elapsed_ms=%d", session_id, int((time.monotonic() - start_time) * 1000))
-
-    return answer

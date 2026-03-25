@@ -187,10 +187,22 @@ makeSlider(".hero-bg-slide", 4500);
         throw new Error(`backend error: ${response.status}`);
       }
 
-      const data = await response.json();
-      const answer = data && data.answer ? data.answer : "Je n'ai pas de reponse pour le moment.";
       if (thinkingBubble) {
-        thinkingBubble.innerHTML = renderMarkdown(answer);
+        thinkingBubble.innerHTML = "";
+      }
+      let fullText = "";
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        fullText += chunk;
+        if (thinkingBubble) {
+          thinkingBubble.innerHTML = renderMarkdown(fullText);
+        }
+        body.scrollTop = body.scrollHeight;
       }
     } catch (error) {
       if (thinkingBubble) {
