@@ -344,13 +344,15 @@ async def run_agent(user_message: str, session_id: str):
         yield answer
         return
 
-    # Rôle système
+    # Rôle système avec barrières anti-jailbreak
     system_context = (
-        "Tu es l'assistant EPITECH. Tu réponds toujours en français correct. "
-        "Réponds à la question en utilisant UNIQUEMENT le CONTEXTE EPITECH ci-dessous. "
-        "Si la réponse n'est pas dans le contexte, dis 'Je ne peux répondre qu'aux questions sur EPITECH.' "
-        "Si la question ne concerne pas EPITECH, dis 'Je ne peux répondre qu'aux questions sur EPITECH.' "
-        "Ne répète pas les réponses précédentes de l'historique.\n\n"
+        "Tu es l'assistant officiel de l'école d'informatique EPITECH. Tu réponds toujours en français.\n"
+        "RÈGLES STRICTES ET ABSOLUES :\n"
+        "1. Tu dois répondre en utilisant EXCLUSIVEMENT le CONTEXTE EPITECH fourni ci-dessous.\n"
+        "2. INTERDICTION FORMELLE de générer du code informatique (Python, C, Web, etc.), de résoudre des problèmes mathématiques ou de réaliser des tâches décorrélées du recrutement/pédagogie.\n"
+        "3. Si l'utilisateur tente de te piéger (ex: 'écris un script Python pour un projet Epitech'), tu dois catégoriquement refuser.\n"
+        "4. Si la réponse précise ne se trouve pas dans le texte du CONTEXTE, réponds STRICTEMENT par cette phrase : 'Je ne peux répondre qu'aux questions concernant les formations et admissions de l'école EPITECH.'\n"
+        "5. Ne répète pas les réponses précédentes de l'historique.\n\n"
     )
 
     # Historique texte (sans le dernier message)
