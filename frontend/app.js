@@ -159,6 +159,53 @@ makeSlider(".hero-bg-slide", 4500);
     return bubble;
   }
 
+  function appendFeedbackButtons(bubbleElement, questionText, answerText, sessionId) {
+    const feedbackDiv = document.createElement("div");
+    feedbackDiv.className = "chat-feedback";
+    feedbackDiv.style.display = "flex";
+    feedbackDiv.style.gap = "8px";
+    feedbackDiv.style.marginTop = "4px";
+    feedbackDiv.style.justifyContent = "flex-end";
+    
+    feedbackDiv.innerHTML = `
+      <button type="button" class="btn-feedback" data-thumb="1" style="background:none;border:none;cursor:pointer;opacity:0.6;font-size:14px;transition:0.2s;" title="Bonne réponse">👍</button>
+      <button type="button" class="btn-feedback" data-thumb="0" style="background:none;border:none;cursor:pointer;opacity:0.6;font-size:14px;transition:0.2s;" title="Mauvaise réponse">👎</button>
+    `;
+    
+    const btns = feedbackDiv.querySelectorAll(".btn-feedback");
+    btns.forEach(b => {
+      b.addEventListener("mouseover", () => { if(!b.disabled) b.style.opacity = "1"; });
+      b.addEventListener("mouseout", () => { if(!b.disabled) b.style.opacity = "0.6"; });
+      
+      b.addEventListener("click", async () => {
+        const thumb = parseInt(b.getAttribute("data-thumb"), 10);
+        btns.forEach(btn => btn.disabled = true);
+        b.style.opacity = "1";
+        b.style.transform = "scale(1.2)";
+        const otherBtn = thumb === 1 ? btns[1] : btns[0];
+        otherBtn.style.opacity = "0.2";
+        
+        try {
+          await fetch(`${API_BASE_URL}/feedback`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              session_id: sessionId,
+              question: questionText,
+              answer: answerText,
+              thumb: thumb
+            })
+          });
+        } catch(e) {
+          console.error("Feedback error", e);
+        }
+      });
+    });
+    
+    // On l'ajoute dans le conteneur du message
+    bubbleElement.parentElement.appendChild(feedbackDiv);
+  }
+
   // Envoi formulaire
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -210,6 +257,11 @@ makeSlider(".hero-bg-slide", 4500);
         }
         body.scrollTop = body.scrollHeight;
       }
+      
+      if (thinkingBubble && fullText.trim().length > 0) {
+        appendFeedbackButtons(thinkingBubble, text, fullText, getSessionId());
+      }
+      
     } catch (error) {
       if (thinkingBubble) {
         thinkingBubble.innerHTML = renderMarkdown(
