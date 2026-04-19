@@ -7,3 +7,4 @@ fastmcp
 mcp
 groq
 python-dotenv
+rank-bm25

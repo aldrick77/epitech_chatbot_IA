@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple, Optional
 
 from dotenv import load_dotenv
 from groq import AsyncGroq
+from rank_bm25 import BM25Okapi
 
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
@@ -51,41 +52,56 @@ GIBBERISH_MAX_LEN = 12
 
 def select_docs_for_question(question: str, knowledge: Dict[str, str]) -> tuple[str, list[str]]:
     """
-    Routage intelligent : n'injecte que les documents locaux pertinents 
-    pour éviter de saturer le quota Groq (limite de tokens par minute) 
-    et limiter les hallucinations liées au surplus d'informations.
+    Routage intelligent : utilise BM25 pour trouver les documents locaux
+    les plus pertinents. Ultra-rapide et algorithmique, évite de charger tout.
     """
     if not knowledge:
         return "", []
 
-    q = normalize_text(question)
-    selected_keys = set()
-
-    if any(w in q for w in ["admission", "inscription", "candidature", "concours", "bac"]):
-        selected_keys.add("admissions")
-    if any(w in q for w in ["alternance", "apprentissage", "rythme", "entreprise", "contrat"]):
-        selected_keys.add("alternance")
-    if any(w in q for w in ["campus", "ville", "paris", "lyon", "bordeaux", "locaux", "strasbourg"]):
-        selected_keys.add("campus")
-    if any(w in q for w in ["formation", "programme", "pge", "bachelor", "msc", "mba", "option", "annee", "cursus"]):
-        selected_keys.add("formations")
-    if any(w in q for w in ["partenaire", "entreprise", "reseau", "international", "stage", "etranger"]):
-        selected_keys.add("partenaires")
+    keys = list(knowledge.keys())
+    docs = [knowledge[k] for k in keys]
+    
+    # Tokenisation des documents
+    tokenized_docs = [tokenize_text(normalize_text(doc)) for doc in docs]
+    bm25 = BM25Okapi(tokenized_docs)
+    
+    tokenized_query = tokenize_text(normalize_text(question))
+    scores = bm25.get_scores(tokenized_query)
+    
+    selected_keys = []
+    parts = []
+    
+    # On trie par score décroissant
+    scored_items = sorted(zip(keys, docs, scores), key=lambda x: x[2], reverse=True)
+    
+    for key, doc, score in scored_items:
+        if score > 0:
+            selected_keys.append(key)
+            parts.append(f"[{key.upper()}]\n{doc}")
+            if len(selected_keys) >= 2: # Top 2 contextes locaux max
+                break
 
     # Fallback pour ne pas répondre sans contexte
-    if not selected_keys:
-        selected_keys = {"formations", "campus"}
+    if not selected_keys and "formations" in knowledge and "campus" in knowledge:
+        selected_keys = ["formations", "campus"]
+        parts = [f"[FORMATIONS]\n{knowledge['formations']}", f"[CAMPUS]\n{knowledge['campus']}"]
 
-    parts: List[str] = []
-    keys: List[str] = []
-    
-    # On garantit l'ordre pour les tests / logs
-    for key in sorted(list(selected_keys)):
-        if key in knowledge:
-            parts.append(f"[{key.upper()}]\n{knowledge[key]}")
-            keys.append(key)
+    return "\n\n".join(parts), selected_keys
 
-    return "\n\n".join(parts), keys
+
+def chunk_and_rank_text(query: str, text: str, top_k: int = 3) -> str:
+    """
+    Découpe le HTML scrapé en paragraphes et utilise BM25 pour 
+    ne conserver que les plus pertinents pour la question.
+    """
+    paragraphs = [p.strip() for p in text.split("\n") if len(p.strip()) > 50]
+    if not paragraphs:
+        return ""
+    tokenized_corpus = [tokenize_text(normalize_text(p)) for p in paragraphs]
+    bm25 = BM25Okapi(tokenized_corpus)
+    tokenized_query = tokenize_text(normalize_text(query))
+    top_paragraphs = bm25.get_top_n(tokenized_query, paragraphs, n=min(top_k, len(paragraphs)))
+    return "\n\n".join(top_paragraphs)
 
 
 def build_knowledge_context() -> str:
@@ -335,9 +351,10 @@ async def run_agent(user_message: str, session_id: str):
 
     external_knowledge = ""
     if scraped_text:
+        best_chunks = chunk_and_rank_text(user_message, scraped_text, top_k=3)
         external_knowledge = (
             "Voici un extrait d'informations officielles provenant du site d'EPITECH :\n"
-            + scraped_text[:2000]
+            + best_chunks
             + "\n\n"
         )
 

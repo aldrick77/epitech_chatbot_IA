@@ -1,0 +1,62 @@
+[
+  {
+    "question": "Puis-je m'inscrire via Parcoursup pour rejoindre EPITECH ?",
+    "expected_topics": ["Parcoursup", "Programme Grande École", "Lycéens de terminale", "Autres formations hors Parcoursup"],
+    "category": "admissions"
+  },
+  {
+    "question": "En quoi consiste le processus d'admission et l'entretien ?",
+    "expected_topics": ["Étude de dossier", "Entretien de motivation", "Tests logiques", "Adéquation pédagogie par projets", "Curiosité"],
+    "category": "admissions"
+  },
+  {
+    "question": "Quand est-ce qu'on commence l'alternance ?",
+    "expected_topics": ["Dernières années", "Programme Grande École", "MSc", "MBA"],
+    "category": "alternance"
+  },
+  {
+    "question": "Quels types de missions peut-on faire en alternance ?",
+    "expected_topics": ["Développement logiciel", "Administration système et réseau", "Cybersécurité", "Data", "Gestion de projets numériques"],
+    "category": "alternance"
+  },
+  {
+    "question": "Combien avez-vous de campus et pouvez-vous m'en citer quelques-uns ?",
+    "expected_topics": ["15 campus en France", "Paris", "Lyon", "Moulins", "La Réunion", "Strasbourg"],
+    "category": "campus"
+  },
+  {
+    "question": "Où se trouvent exactement les campus de Nice et Mulhouse ?",
+    "expected_topics": ["Sophia Antipolis", "KMØ", "Écosystème numérique", "Technopoles"],
+    "category": "campus"
+  },
+  {
+    "question": "Le Programme Grande École est-il un diplôme reconnu ?",
+    "expected_topics": ["Visé par le Ministère de l'Enseignement Supérieur", "Niveau Bac+5", "Expert en technologies de l'information"],
+    "category": "formations"
+  },
+  {
+    "question": "Quelles spécialités proposez-vous en Bachelor (en 3 ans) ?",
+    "expected_topics": ["Intelligence Artificielle / Data", "Cybersécurité", "Cloud & Web3", "Développeur Full Stack", "Tech & Business Management"],
+    "category": "formations"
+  },
+  {
+    "question": "C'est quoi la Piscine et qui la passe ?",
+    "expected_topics": ["Période intensive", "Pré-MSc", "Consolider les fondamentaux", "Programmation"],
+    "category": "formations"
+  },
+  {
+    "question": "Est-ce qu'Epitech aide à trouver une entreprise pour l'emploi ou les stages ?",
+    "expected_topics": ["Vaste réseau de centaines d'entreprises", "Partenaires", "Hackathons", "Ateliers CV", "Fort taux d'embauche"],
+    "category": "partenaires"
+  },
+  {
+    "question": "Que faire si je veux me spécialiser dans la Data et le Business Intelligence ?",
+    "expected_topics": ["MBA / MSc Data Science & Business Intelligence", "Niveau RNCP 7", "Machine learning", "Power BI", "Data mining"],
+    "category": "formations"
+  },
+  {
+    "question": "Quelle est la date de sortie du dernier iPhone ?",
+    "expected_topics": ["Refus de répondre", "Se limite aux questions sur EPITECH"],
+    "category": "out_of_scope"
+  }
+]
