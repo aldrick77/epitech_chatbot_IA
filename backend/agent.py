@@ -47,6 +47,7 @@ GREETING_TOKENS = {
     "slt",
 }
 SMALL_TALK_TOKENS = {"comment", "ca", "va", "cv", "cava", "commentcava"}
+THANKS_TOKENS = {"merci", "thx", "thanks", "remercie", "remerciements", "super", "top", "parfait", "ok"}
 GIBBERISH_MAX_LEN = 12
 
 
@@ -137,6 +138,17 @@ def is_small_talk(text: str) -> bool:
     if not all(token in allowed for token in tokens):
         return False
     return any(token in GREETING_TOKENS or token in SMALL_TALK_TOKENS for token in tokens)
+
+
+def is_thanks(text: str) -> bool:
+    normalized = normalize_text(text)
+    tokens = tokenize_text(normalized)
+    if not tokens:
+        return False
+    # On evite de bypass une vraie question longue qui contiendrait juste le mot "merci"
+    if len(tokens) > 6:
+        return False
+    return any(token in THANKS_TOKENS for token in tokens)
 
 
 def is_gibberish(text: str) -> bool:
@@ -308,6 +320,16 @@ async def run_agent(user_message: str, session_id: str):
         history.append(("assistant", answer))
         conversations[session_id] = history
         logger.info("agent short-circuit session_id=%s reason=small_talk", session_id)
+        yield answer
+        return
+
+    if is_thanks(user_message):
+        answer = (
+            "Je t'en prie ! N'hésite pas si tu as d'autres questions sur EPITECH."
+        )
+        history.append(("assistant", answer))
+        conversations[session_id] = history
+        logger.info("agent short-circuit session_id=%s reason=thanks", session_id)
         yield answer
         return
 
