@@ -30,10 +30,16 @@ makeSlider(".hero-bg-slide", 4500);
   const input = document.getElementById("chat-input");
   const body = document.getElementById("chat-widget-body");
   const promptButtons = Array.from(document.querySelectorAll("[data-prompt]"));
-  const BACKEND_PORT = 8000;
-  const API_PROTOCOL = window.location.protocol === "https:" ? "https" : "http";
-  const API_HOST = window.location.hostname || "127.0.0.1";
-  const API_BASE_URL = `${API_PROTOCOL}://${API_HOST}:${BACKEND_PORT}`;
+
+  // ── URL du backend ──────────────────────────────────────────
+  // ⚠️  Remplace cette URL par celle fournie par Render après déploiement
+  const RENDER_BACKEND_URL = "https://epitech-chatbot.onrender.com";
+
+  // Auto-détection : localhost → backend local, sinon → Render
+  const isLocal = ["localhost", "127.0.0.1", ""].includes(window.location.hostname);
+  const API_BASE_URL = isLocal
+    ? "http://127.0.0.1:8000"
+    : RENDER_BACKEND_URL;
   const SESSION_STORAGE_KEY = "epitech-chat-session-id";
   let isSending = false;
 

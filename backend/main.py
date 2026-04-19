@@ -16,7 +16,13 @@ setup_logging()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://aldrick77.github.io",   # GitHub Pages (prod)
+        "http://localhost:5500",          # Live Server (dev)
+        "http://127.0.0.1:5500",         # Live Server (dev)
+        "http://localhost:3000",          # Dev alternatif
+        "null",                           # fichier local ouvert directement
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
     allow_credentials=False,
