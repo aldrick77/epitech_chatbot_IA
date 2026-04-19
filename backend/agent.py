@@ -189,14 +189,15 @@ async def get_local_knowledge() -> Dict[str, str]:
     if LOCAL_KNOWLEDGE and (now - LOCAL_KNOWLEDGE_CACHE_AT) < LOCAL_KNOWLEDGE_TTL_SEC:
         return LOCAL_KNOWLEDGE
 
-    mcp_knowledge = await fetch_local_knowledge()
-    if not mcp_knowledge:  # Check if None OR empty dictionary
+    # Direct function instead of MCP equivalent
+    direct_knowledge = load_local_knowledge_files()
+    if not direct_knowledge:
         if not LOCAL_KNOWLEDGE:
             LOCAL_KNOWLEDGE = LOCAL_KNOWLEDGE_FALLBACK
         LOCAL_KNOWLEDGE_CACHE_AT = now
         return LOCAL_KNOWLEDGE
 
-    LOCAL_KNOWLEDGE = mcp_knowledge
+    LOCAL_KNOWLEDGE = direct_knowledge
     LOCAL_KNOWLEDGE_CACHE_AT = now
     return LOCAL_KNOWLEDGE
 
@@ -224,13 +225,13 @@ async def fetch_scraped_text(path: str) -> str:
         return cached
 
     logger.info("agent scraping cache miss url=%s", url)
-    scraped = await call_scrape_url(url)
-    if scraped is None:
-        logger.warning("agent scraping via mcp failed url=%s fallback=direct", url)
-        try:
-            scraped = scrape_epitech_page(path)
-        except Exception:
-            scraped = ""
+    
+    # Bypass MCP subprocess overhead (which takes 13s on Render free tier)
+    try:
+        scraped = scrape_epitech_page(path)
+    except Exception as e:
+        logger.error("agent scraping direct failed url=%s err=%s", url, e)
+        scraped = ""
 
     if scraped:
         put_cached_scrape(url, scraped)
