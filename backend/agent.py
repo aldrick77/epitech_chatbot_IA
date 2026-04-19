@@ -51,18 +51,39 @@ GIBBERISH_MAX_LEN = 12
 
 def select_docs_for_question(question: str, knowledge: Dict[str, str]) -> tuple[str, list[str]]:
     """
-    Injecte TOUS les documents locaux dans le contexte.
-    Les fichiers data/epitech/*.txt font ~6 Ko au total,
-    c'est suffisamment petit pour tout envoyer au LLM.
+    Routage intelligent : n'injecte que les documents locaux pertinents 
+    pour éviter de saturer le quota Groq (limite de tokens par minute) 
+    et limiter les hallucinations liées au surplus d'informations.
     """
     if not knowledge:
         return "", []
 
+    q = normalize_text(question)
+    selected_keys = set()
+
+    if any(w in q for w in ["admission", "inscription", "candidature", "concours", "bac"]):
+        selected_keys.add("admissions")
+    if any(w in q for w in ["alternance", "apprentissage", "rythme", "entreprise", "contrat"]):
+        selected_keys.add("alternance")
+    if any(w in q for w in ["campus", "ville", "paris", "lyon", "bordeaux", "locaux", "strasbourg"]):
+        selected_keys.add("campus")
+    if any(w in q for w in ["formation", "programme", "pge", "bachelor", "msc", "mba", "option", "annee", "cursus"]):
+        selected_keys.add("formations")
+    if any(w in q for w in ["partenaire", "entreprise", "reseau", "international", "stage", "etranger"]):
+        selected_keys.add("partenaires")
+
+    # Fallback pour ne pas répondre sans contexte
+    if not selected_keys:
+        selected_keys = {"formations", "campus"}
+
     parts: List[str] = []
     keys: List[str] = []
-    for key in sorted(knowledge.keys()):
-        parts.append(f"[{key.upper()}]\n{knowledge[key]}")
-        keys.append(key)
+    
+    # On garantit l'ordre pour les tests / logs
+    for key in sorted(list(selected_keys)):
+        if key in knowledge:
+            parts.append(f"[{key.upper()}]\n{knowledge[key]}")
+            keys.append(key)
 
     return "\n\n".join(parts), keys
 
